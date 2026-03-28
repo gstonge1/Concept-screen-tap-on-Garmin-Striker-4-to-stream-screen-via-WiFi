@@ -35,14 +35,14 @@ High-resolution PCB photos from [gfixer.ru](https://gfixer.ru) (spare parts reta
 
 **What is visible on the PCB:**
 
-- **LCD FPC connector** — 34-pin, 0.5mm pitch, ZIF flip-top, bottom contact — on the board edge. This is the primary access point to the SPI bus.
+- **LCD FPC connector** — 40-pin, 0.5mm pitch, ZIF flip-top, bottom contact — on the board edge. This is the primary access point to the SPI bus.
 - **2×5 test pad array** — visible on the PCB, likely JTAG/SWD debug port used during manufacturing. Useful for GND and VCC reference.
 - **PCM1804** Texas Instruments ADC — sonar signal chain only, not display-related.
 - **EMI shield** covering the main MCU.
 
 **Access strategy:**
 
-The best approach is to use a **FPC breakout board** (34-pin, 0.5mm) inserted between the Garmin motherboard and the LCD. This keeps the display fully functional while exposing all 34 pins on standard 2.54mm headers for measurement and connection.
+The best approach is to use a **FPC breakout board** (40-pin, 0.5mm) inserted between the Garmin motherboard and the LCD. This keeps the display fully functional while exposing all 40 pins on standard 2.54mm headers for measurement and connection.
 
 ---
 
@@ -73,7 +73,7 @@ This is a documented open standard defined by the LCD controller datasheet (ILI9
 | Component | Details | Source | Price |
 |---|---|---|---|
 | ESP32-S3 DevKit | Espressif official board | Digikey / Amazon | ~$12 |
-| FPC breakout 34p 0.5mm | "FPC-34P 0.5MM adapter" | AliExpress | ~C$1.50 for 2 |
+| FPC breakout 40p 0.5mm | "FPC-40P 0.5MM adapter" | AliExpress | ~C$1.50 for 2 |
 | 5 jumper wires | 10cm, male-male | Any | ~$0 |
 | 33Ω resistors × 4 | Series protection on SPI lines | Any | ~$0 |
 
@@ -89,12 +89,12 @@ This is a documented open standard defined by the LCD controller datasheet (ILI9
 | Parameter | Value |
 |---|---|
 | Connector type | ZIF flip-top, bottom contact |
-| Pin count | **34 pins** |
+| Pin count | **40 pins** |
 | Pitch | **0.5 mm** |
 | Actuator | Right side, flip-top style |
-| Compatible ZIF part | Hirose FH12-34S-0.5SH(55) |
-| FPC extension cable | FFC 34p 0.5mm same-side, 100mm |
-| Breakout for prototyping | "FPC-34P 0.5MM" on AliExpress — C$1.50/2pcs |
+| Compatible ZIF part | Hirose FH12-40S-0.5SH(55) |
+| FPC extension cable | FFC 40p 0.5mm same-side, 100mm |
+| Breakout for prototyping | "FPC-40P 0.5MM" on AliExpress — C$1.50/2pcs |
 
 **Important:** The LCD must remain connected during measurement. The Garmin MCU likely checks for LCD presence at boot and will not send SPI data if the display is disconnected. The FPC breakout keeps the LCD connected while exposing all pins.
 
@@ -106,7 +106,7 @@ This is a documented open standard defined by the LCD controller datasheet (ILI9
 
 With the FPC breakout inserted and the Striker 4 powered on, displaying an active sonar screen:
 
-**Using a multimeter (DC voltage mode), probe each of the 34 pins:**
+**Using a multimeter (DC voltage mode), probe each of the 40 pins:**
 
 | Reading | Signal type |
 |---|---|
@@ -235,8 +235,8 @@ Deep documentation of SPI LCD command sets (ILI9341/ST7789), partial updates, an
 
 - [x] Problem defined
 - [x] PCB photographed and analyzed (gfixer.ru photos)
-- [x] LCD FPC connector fully characterized — 34-pin, 0.5mm pitch, ZIF flip-top, bottom contact
-- [x] FPC breakout identified — AliExpress FPC-34P, C$1.50 for 2 pcs
+- [x] LCD FPC connector fully characterized — 40-pin, 0.5mm pitch, ZIF flip-top, bottom contact
+- [x] FPC breakout identified — AliExpress FPC-40P, C$1.50 for 2 pcs
 - [x] Signal identification procedure documented
 - [x] Firmware stack identified — 4 open-source components
 - [x] Bill of materials complete (~$13 total)
@@ -253,10 +253,10 @@ Deep documentation of SPI LCD command sets (ILI9341/ST7789), partial updates, an
 **If you have a Garmin Striker 4 and a multimeter**, you can advance this project today:
 
 1. Open the unit (6 Phillips #0 screws)
-2. Order the FPC-34P 0.5mm breakout from AliExpress (~C$1.50)
+2. Order the FPC-40P 0.5mm breakout from AliExpress (~C$1.50)
 3. Insert the breakout between the motherboard ZIF connector and the LCD cable
 4. Power on the unit with the sonar screen active
-5. Measure DC voltage on each of the 34 breakout pins
+5. Measure DC voltage on each of the 40 breakout pins
 6. Note which pins oscillate — those are your SPI signals
 7. Open an Issue here with your findings
 
