@@ -6,7 +6,35 @@
 Stream your Garmin Striker fishfinder screen wirelessly to any mobile browser — passively, with no permanent modification to the device.
 
 ---
+## Current status
 
+This repository currently documents:
+- panel identification
+- interface analysis
+- passive tapping concept
+- low-cost hardware options
+
+This repository does not yet demonstrate:
+- confirmed full 24-bit capture on real hardware
+- stable ESP32-S3 live streaming
+- production-ready hardware
+
+  ## What is confirmed
+- The display panel reference matches a Tianma RGB LCD family
+- 40-pin FPC interface is present
+- External SDRAM suggests framebuffered video output
+
+## What is suspected
+- Garmin Striker 4 likely uses a parallel RGB interface
+- DE may be used to delimit active pixels
+- Effective color depth may be lower than full 24-bit
+
+## What is still unknown
+- Exact active timing mode used by Garmin
+- Whether all 24 color bits are meaningful
+- Best low-cost MCU for passive capture
+
+  
 ## The Idea
 
 The Garmin Striker 4 and Striker Vivid 4cv have no WiFi. Their LCD is driven by a **parallel RGB interface** over a 40-pin FPC connector. By inserting a breakout board between the motherboard and the LCD and capturing the RGB signal, the screen content can be reconstructed and streamed live to any phone browser.
