@@ -1,24 +1,23 @@
-# Garmin Striker 4 — WiFi Screen Extractor
+# Garmin Striker 4 / Striker Vivid 4cv — WiFi Screen Extractor
 
-> **Concept project** — Research complete, implementation pending.  
-> All hardware identified, firmware stack documented. Ready to build.
+> **Feasibility study** — Hardware fully characterized, interface confirmed ( or not ), implementation pending.  
+> Looking for contributors with a physical unit to validate the last hardware steps.
 
-Stream your Garmin Striker 4 fishfinder screen wirelessly to any mobile browser — for ~$13 in parts, with 5 wires connected to the PCB.
+Stream your Garmin Striker fishfinder screen wirelessly to any mobile browser — passively, with no permanent modification to the device.
 
 ---
 
 ## The Idea
 
-The Garmin Striker 4 has no WiFi. But its internal LCD is driven by a standard SPI bus, and the PCB exposes accessible points that give direct access to those SPI signals.
-
-By connecting an ESP32-S3 passively to those signals, capturing the SPI bus, reconstructing the framebuffer, and streaming MJPEG over WiFi, the Striker 4's screen can be viewed live on any phone browser — with zero modification to the Garmin's behavior.
+The Garmin Striker 4 and Striker Vivid 4cv have no WiFi. Their LCD is driven by a **parallel RGB interface** over a 40-pin FPC connector. By inserting a breakout board between the motherboard and the LCD and capturing the RGB signal, the screen content can be reconstructed and streamed live to any phone browser.
 
 ```
-[Garmin Striker 4 PCB]
-    SCK, MOSI, CS, DC, GND
-           ↓ 5 wires (passive, read-only)
-      [ESP32-S3 DevKit]
-    SPI slave + JPEG encode
+[Garmin Striker PCB]
+    RGB data (R0-R7, G0-G7, B0-B7)
+    HSYNC, VSYNC, PCLK, DE
+           ↓ FPC breakout (passive, read-only)
+      [Raspberry Pi Zero W]  ← or ESP32-S3 with I2S camera mode
+    RGB capture + JPEG encode
            ↓ WiFi
    http://192.168.4.1/stream
            ↓
@@ -27,169 +26,239 @@ By connecting an ESP32-S3 passively to those signals, capturing the SPI bus, rec
 
 ---
 
-## Key Hardware Discovery
+## Interface Confirmed: Parallel RGB 24-bit
 
-High-resolution PCB photos from [gfixer.ru](https://gfixer.ru) (spare parts retailer) reveal the Striker 4 internals in detail.
+> **This is the most important finding of this research.**
 
-**PCB part number:** `105-03781-01`
+Early analysis assumed SPI. The interface is actually **parallel RGB 24-bit**, confirmed by two independent sources:
 
-**What is visible on the PCB:**
+### Source 1 — LCD part number from spare parts retailer
 
-- **LCD FPC connector** — 40-pin, 0.5mm pitch, ZIF flip-top, bottom contact — on the board edge. This is the primary access point to the SPI bus.
-- **2×5 test pad array** — visible on the PCB, likely JTAG/SWD debug port used during manufacturing. Useful for GND and VCC reference.
-- **PCM1804** Texas Instruments ADC — sonar signal chain only, not display-related.
-- **EMI shield** covering the main MCU.
+[gfixer.com](https://gfixer.com/products/gp05151) lists the replacement LCD for the **Garmin Striker Plus 4 (4cv, 4dv)** with part number **TM043NDHG13** (Tianma Microelectronics). MPN: `011-04398-30, TM043NDHG13`.
 
-**Access strategy:**
+### Source 2 — Datasheet of sibling model TM043NDHG12
 
-The best approach is to use a **FPC breakout board** (40-pin, 0.5mm) inserted between the Garmin motherboard and the LCD. This keeps the display fully functional while exposing all 40 pins on standard 2.54mm headers for measurement and connection.
+The **TM043NDHG12** datasheet (Tianma, 2016, V1.1) was retrieved from [datasheet4u.com](https://datasheet4u.com/pdf/1259013/TM043NDHG12.pdf). This is the revision immediately preceding the G13 and from the same product family. It specifies:
+
+- **Interface: RGB 24-bit** (R8 + G8 + B8)
+- **Driver IC: ST7282T2**
+- **Connector: FH12A-40S-0.5SH** (Hirose, 40-pin, 0.5mm pitch, ZIF)
+- **Resolution: 480×272**
+- **Supply voltage: 3.3V**
+
+The G13 revision is expected to be pin-compatible with the G12 — confirmed by the identical physical connector and pin count visible in PCB photos.
+
+### Source 3 — TM043NDH03 specification (twscreen.com)
+
+The closely related **TM043NDH03** (same Tianma family, same 4.3" size) is listed on [twscreen.com](https://www.twscreen.com/en/lcdpanel/15622/tianma/tm043ndh03/) with: *"Signal Interface: Parallel RGB (1 ch 8-bit) FPC 40 pins"* — consistent with the G12 datasheet.
+
+### Why 40 pins makes sense for RGB
+
+The pin count adds up exactly:
+
+| Signal group | Pins |
+|---|---|
+| R0–R7 (red data) | 8 |
+| G0–G7 (green data) | 8 |
+| B0–B7 (blue data) | 8 |
+| DCLK, HSYNC, VSYNC, DE, DISP | 5 |
+| VDD, GND × 3, VLED+, VLED- | 7 |
+| X_R, Y_B, X_L, Y_T (resistive touch) | 4 |
+| **Total** | **40** ✅ |
 
 ---
 
-## Why This Works
+## Full Pinout — TM043NDHG12 (expected identical for G13)
 
-The SPI bus to a TFT LCD carries **raw, unencrypted pixel data**. No proprietary protocol, no encryption, no compression. The stream is:
+*Source: TM043NDHG12 datasheet V1.1, Tianma Microelectronics, 2016-02-05*
 
-```
-Command 0x2A → set column range (X1 to X2)
-Command 0x2B → set row range  (Y1 to Y2)
-Command 0x2C → write pixels (RAMWR)
-Data bytes   → RGB565 pixels, 2 bytes per pixel
-```
+| Pin | Signal | Type | Description |
+|---|---|---|---|
+| 1 | VLED- | PWR | Backlight cathode |
+| 2 | VLED+ | PWR | Backlight anode |
+| 3 | GND | PWR | Ground |
+| 4 | VDD | PWR | 3.3V supply |
+| 5 | R0 | I | Red data bit 0 |
+| 6 | R1 | I | Red data bit 1 |
+| 7 | R2 | I | Red data bit 2 |
+| 8 | R3 | I | Red data bit 3 |
+| 9 | R4 | I | Red data bit 4 |
+| 10 | R5 | I | Red data bit 5 |
+| 11 | R6 | I | Red data bit 6 |
+| 12 | R7 | I | Red data bit 7 |
+| 13 | G0 | I | Green data bit 0 |
+| 14 | G1 | I | Green data bit 1 |
+| 15 | G2 | I | Green data bit 2 |
+| 16 | G3 | I | Green data bit 3 |
+| 17 | G4 | I | Green data bit 4 |
+| 18 | G5 | I | Green data bit 5 |
+| 19 | G6 | I | Green data bit 6 |
+| 20 | G7 | I | Green data bit 7 |
+| 21 | B0 | I | Blue data bit 0 |
+| 22 | B1 | I | Blue data bit 1 |
+| 23 | B2 | I | Blue data bit 2 |
+| 24 | B3 | I | Blue data bit 3 |
+| 25 | B4 | I | Blue data bit 4 |
+| 26 | B5 | I | Blue data bit 5 |
+| 27 | B6 | I | Blue data bit 6 |
+| 28 | B7 | I | Blue data bit 7 |
+| 29 | GND | PWR | Ground |
+| 30 | DCLK | I | Pixel clock |
+| 31 | DISP | I | Display on/off |
+| 32 | HSYNC | I | Horizontal sync |
+| 33 | VSYNC | I | Vertical sync |
+| 34 | DE | I | Data enable |
+| 35 | NC | — | Not connected |
+| 36 | GND | PWR | Ground |
+| 37 | X_R | O | Resistive touch right |
+| 38 | Y_B | O | Resistive touch bottom |
+| 39 | X_L | O | Resistive touch left |
+| 40 | Y_T | O | Resistive touch top |
 
-This is a documented open standard defined by the LCD controller datasheet (ILI9341, ST7789, or similar family). Any SPI sniffer reads it directly.
+**Note:** Pins 37–40 are resistive touchscreen signals. These are likely not connected on the Striker 4 base model (no touchscreen). On the Vivid 4cv, touch connectivity is unconfirmed.
 
-**There is nothing to decrypt.** The only work required is:
-- Watch the `DC` line to distinguish commands from pixel data
-- When command `0x2C` appears, start storing the following bytes as pixels
-- Every 2 bytes = 1 RGB565 pixel placed at the current cursor position
+**Matched connector:** `FH12A-40S-0.5SH` (Hirose)
+
+---
+
+## How the Interface Assessment Evolved
+
+> **Transparency note** — No physical measurements have been taken on a real unit yet. This section documents how the interface conclusion changed during the research process, based entirely on remote analysis of photos and datasheets.
+
+**Original assumption: SPI**
+
+The project started with the assumption that the LCD used SPI — a reasonable starting point for a small 4" display at this price point. Early analysis focused on identifying SCK, MOSI, CS, and DC lines on the FPC connector, and the firmware stack was designed around a passive SPI slave tap.
+
+**What changed the assessment:**
+
+Three converging pieces of evidence shifted the conclusion away from SPI:
+
+1. **The 40-pin FPC connector** — SPI only requires ~13–16 pins total (4 signals + power + backlight). A 40-pin connector is significantly oversized for SPI but maps exactly to a full RGB 24-bit interface (24 data lines + sync signals + power + backlight = 40 pins).
+
+2. **The Winbond SDRAM external memory** — Identified on the PCB in teardown photos. An external framebuffer RAM is a strong indicator of an RGB parallel interface, which requires the MCU to continuously push pixel data from memory to the display rather than writing to an internal display GRAM as in SPI.
+
+3. **The TM043NDHG12 datasheet** — The sibling model explicitly specifies "Interface: RGB 24-bit" with driver IC ST7282T2. This removed all ambiguity.
+
+**What this changes for the project:**
+
+- The original SPI firmware stack (~30 lines) no longer applies
+- Capture now requires handling 24 parallel data lines synchronized with a pixel clock
+- The Raspberry Pi Zero W becomes the recommended platform (native DPI support)
+- The ESP32-S3 is still viable but more complex (I2S camera mode, 16-bit RGB565 compromise)
+- The FPC breakout approach remains identical — only the signals of interest change
+
+**What still needs physical validation:**
+
+The interface type is now considered confirmed based on the datasheet evidence, but the exact pin mapping on the Garmin PCB — which FPC pin connects to which signal — has not been physically verified. The datasheet pinout is trusted to be accurate for the G13 revision, but a logic analyzer session on a real unit would provide full confirmation.
+
+---
+
+## PCB Components Identified
+
+From high-resolution eBay and gfixer.ru teardown photos:
+
+| Component | Marking | Function |
+|---|---|---|
+| Main MCU | `SN/2065850B2CE` | Garmin custom/semi-custom TI processor |
+| External RAM | **Winbond SDRAM 256Mbit** | Framebuffer storage — explains why RGB parallel is used |
+| Audio ADC | PCM1804 / PCM1604 (TI) | Sonar signal chain — not display related |
+| LCD driver | **ST7282T2** | Integrated in LCD FPC module |
+| Test pads | 2×5 array, ~1.27mm pitch | Likely JTAG/SWD ARM debug port |
+
+**Key insight:** The presence of **Winbond SDRAM external memory** confirms the MCU needs an external framebuffer — this is consistent with an RGB parallel interface, which requires the MCU to continuously push pixel data rather than relying on an internal display GRAM.
+
+---
+
+## Compatible Models
+
+| Model | LCD part number | Interface | Status |
+|---|---|---|---|
+| Garmin Striker 4 | TM043NDHG13 | RGB 24-bit | PCB confirmed from gfixer.ru |
+| Garmin Striker Plus 4 (4cv, 4dv) | TM043NDHG13 | RGB 24-bit | Confirmed — gfixer.com part GP05151 |
+| Garmin Striker Vivid 4cv | **Unknown** | Likely RGB | Specs identical (4", 272×480) but LCD part number not yet sourced |
+
+> **Note on the Striker Vivid 4cv:** gfixer.com lists the Striker Plus 4 (4cv) as using TM043NDHG13, but this refers to the **Plus** series, not the **Vivid** series. The Vivid is a newer generation (2021). The LCD part number for the Vivid 4cv has not been independently confirmed. The physical screen dimensions and resolution are identical to the Striker 4 base model, but the specific LCD module may differ. Physical inspection of the FPC label on a Vivid unit would confirm compatibility.
 
 ---
 
 ## Hardware
 
-### Bill of Materials (~$13 total)
+### Bill of Materials
 
 | Component | Details | Source | Price |
 |---|---|---|---|
-| ESP32-S3 DevKit | Espressif official board | Digikey / Amazon | ~$12 |
+| Raspberry Pi Zero W | Primary capture platform for RGB parallel | Digikey / Amazon | ~$15 |
+| **or** ESP32-S3 DevKit | Alternative — I2S camera mode for RGB capture | Digikey / Amazon | ~$12 |
 | FPC breakout 40p 0.5mm | "FPC-40P 0.5MM adapter" | AliExpress | ~C$1.50 for 2 |
-| 5 jumper wires | 10cm, male-male | Any | ~$0 |
-| 33Ω resistors × 4 | Series protection on SPI lines | Any | ~$0 |
+| FFC cable 40p 0.5mm same-side | 100mm extension | AliExpress | ~$1 |
+| Jumper wires | 22–27 wires (full RGB bus) | Any | ~$1 |
 
 **Optional for signal identification:**
 
 | Tool | Use | Price |
 |---|---|---|
-| Multimeter | Identify SCK/MOSI/CS/DC on ZIF pins | Any |
-| Logic analyzer | Kingst LA1010 or Saleae | $30–$180 |
+| Multimeter | Identify VDD, GND, DCLK on ZIF pins | Any |
+| Logic analyzer 24MHz 8ch | Confirm interface, identify HSYNC/VSYNC/DCLK | ~$10 (AliExpress clone) |
 
-### LCD FPC Connector — fully characterized from PCB photos
+### FPC Connector — Fully Characterized
 
-| Parameter | Value |
-|---|---|
-| Connector type | ZIF flip-top, bottom contact |
-| Pin count | **40 pins** |
-| Pitch | **0.5 mm** |
-| Actuator | Right side, flip-top style |
-| Compatible ZIF part | Hirose FH12-40S-0.5SH(55) |
-| FPC extension cable | FFC 40p 0.5mm same-side, 100mm |
-| Breakout for prototyping | "FPC-40P 0.5MM" on AliExpress — C$1.50/2pcs |
+| Parameter | Value | Source |
+|---|---|---|
+| Pin count | **40 pins** | PCB photos + datasheet |
+| Pitch | **0.5mm** | Datasheet FH12A-40S-0.5SH |
+| Connector type | ZIF flip-top, bottom contact | PCB photos |
+| Matched Hirose part | FH12A-40S-0.5SH | TM043NDHG12 datasheet |
+| FPC cable type | Same-side (SS), 0.3mm thick | Standard for this connector |
+| Max cable length | 15–20 cm | Signal integrity limit at RGB pixel clock |
 
-**Important:** The LCD must remain connected during measurement. The Garmin MCU likely checks for LCD presence at boot and will not send SPI data if the display is disconnected. The FPC breakout keeps the LCD connected while exposing all pins.
+---
 
-**FPC cable length limit:** Keep extension cable under 15–20 cm. Beyond that, cable capacitance degrades SPI signal edges at ~10 MHz.
+## Capture Platform Options
+
+### Option 1 — Raspberry Pi Zero W (recommended)
+
+The Pi Zero W has a native **DPI (Display Parallel Interface)** that can be reconfigured to receive instead of transmit RGB parallel data. WiFi is built-in.
+
+```
+RGB 24-bit → Pi Zero W DPI input → framebuffer → MJPEG → WiFi
+```
+
+- Well documented community
+- Native RGB parallel support
+- Built-in WiFi
+- ~$15
+
+### Option 2 — ESP32-S3
+
+The ESP32-S3 has an **I2S / LCD_CAM peripheral** capable of receiving parallel data in camera mode (same principle as OV2640 camera on ESP32-CAM). However, the OV2640 uses 8-bit parallel — the RGB LCD uses 24-bit, which exceeds the ESP32-S3's I2S width. A possible workaround is to capture only 8 bits (one color channel) or use RGB565 mode (16-bit).
+
+More complex than the Pi Zero W approach but lower cost and smaller footprint.
 
 ---
 
 ## Signal Identification Procedure
 
-With the FPC breakout inserted and the Striker 4 powered on, displaying an active sonar screen:
+With the FPC breakout inserted and the Striker powered on with an active sonar screen:
 
-**Using a multimeter (DC voltage mode), probe each of the 40 pins:**
+**Step 1 — Find GND and VDD first (multimeter DC mode)**
 
-| Reading | Signal type |
+| Reading | Signal |
 |---|---|
-| 0V fixed | GND |
-| 3.3V fixed | VCC or inactive signal |
-| Oscillates slowly | CS or DC |
-| ~1.5–1.8V average (fast) | SCK or MOSI |
+| 0V fixed | GND — pins 3, 29, 36 per datasheet |
+| 3.3V fixed | VDD — pin 4 per datasheet |
+| ~14V fixed | VLED+ — backlight anode |
 
-**Signal characteristics:**
-- `SCK` — most regular square wave, ~10 MHz, always active during screen updates
-- `CS` — stays HIGH, pulses LOW in bursts
-- `DC` — changes slowly, long HIGH or LOW states
-- `MOSI` — varies rapidly with screen content
+**Step 2 — Find DCLK (logic analyzer)**
 
-**Tip:** Display active sonar content while probing — this maximizes MOSI activity and makes it easy to distinguish from static lines.
+DCLK (pin 30) is the most distinctive signal — a continuous square wave at ~9 MHz when the screen is active (480×272 @ 60Hz). Connect logic analyzer CH1 to suspected clock pins until you find the regular square wave.
 
-**Risk note:** A short between two signal lines is harmless momentarily. Avoid shorting VCC (3.3V fixed, typically pin 1 or 2) to GND.
+**Step 3 — Confirm HSYNC and VSYNC**
 
----
+HSYNC fires ~272 times per frame (~16 kHz). VSYNC fires 60 times per second. Both are easy to identify on a logic analyzer.
 
-## Firmware Architecture
+**Step 4 — Verify RGB data**
 
-Four open-source components cover the entire firmware stack:
-
-### 1. SPI Slave Reception
-
-**[martinberlin/esp32-spi-slave](https://github.com/martinberlin/esp32-spi-slave)**
-
-Working Arduino-framework ESP32 SPI slave library, built specifically for passive SPI bus sniffing on display projects.
-
-```cpp
-#include <ESP32SPISlave.h>
-ESP32SPISlave slave;
-uint8_t rx_buf[4096];
-
-void setup() {
-    slave.setDataMode(SPI_MODE0);
-    slave.begin(); // SCK=18, MOSI=23, CS=5
-}
-void loop() {
-    size_t n = slave.transfer(NULL, rx_buf, 4096);
-    process_spi_data(rx_buf, n);
-}
-```
-
-### 2. Framebuffer Reconstruction (~30 lines)
-
-```cpp
-uint16_t framebuffer[160 * 120];
-int cur_x = 0, cur_y = 0;
-bool writing = false;
-uint8_t high_byte = 0;
-bool got_high = false;
-
-void process_byte(uint8_t dc_level, uint8_t byte) {
-    if (dc_level == 0) {
-        writing = (byte == 0x2C); // RAMWR command
-        got_high = false;
-    } else if (writing) {
-        if (!got_high) {
-            high_byte = byte;
-            got_high = true;
-        } else {
-            uint16_t pixel = (high_byte << 8) | byte;
-            framebuffer[cur_y * 160 + cur_x] = pixel;
-            cur_x++;
-            if (cur_x >= 160) { cur_x = 0; cur_y++; }
-            if (cur_y >= 120) cur_y = 0;
-            got_high = false;
-        }
-    }
-}
-```
-
-### 3. JPEG Encoding
-
-`esp_jpg_encode()` — built into ESP-IDF, no external dependency. Converts the RGB565 framebuffer to JPEG in one function call.
-
-### 4. MJPEG WiFi Stream
-
-**[arkhipenko/esp32-cam-mjpeg-multiclient](https://github.com/arkhipenko/esp32-cam-mjpeg-multiclient)**
-
-Replace the camera frame source with the framebuffer. Stream accessible at `http://192.168.4.1/stream` in any mobile browser. No app required, no installation, works on iOS and Android.
+R0–R7, G0–G7, B0–B7 will all show activity synchronized with DCLK when a colorful screen is displayed.
 
 ---
 
@@ -201,66 +270,80 @@ Replace the camera frame source with the framebuffer. Stream accessible at `http
 Reverse-engineering the LCD of a SAAB 9-3 infotainment module using an Adafruit FPC Stick as a man-in-the-middle interposer on a 0.5mm ribbon cable. Identical method, different device.  
 → GitHub: `leighleighleigh/SAAB_ICM2_LCD_RE` and `leighleighleigh/Arduino_SAAB_ICM2_LCD_Driver`
 
-### Passive SPI bus sniffing
-
-**[zaphoxx/pico-tpmsniffer-spi](https://github.com/zaphoxx/pico-tpmsniffer-spi)**  
-Passive SPI capture on RP2040, pogo-pin PCB design, open KiCad files published.
-
-**[stacksmashing/pico-tpmsniffer](https://github.com/stacksmashing/pico-tpmsniffer)**  
-Original TPM SPI sniffer, $4 Raspberry Pi Pico, no soldering required on the target device.
-
-### ESP32 SPI slave sniffing on a display
+### Passive SPI bus sniffing (original firmware reference)
 
 **[martinberlin/esp32-spi-slave](https://github.com/martinberlin/esp32-spi-slave)**  
-Built to debug ePaper display SPI communication. One ESP32 sniffs what the other sends to the display. Directly applicable firmware base.
+Built to debug ePaper display SPI communication. Still relevant as a reference for passive bus capture methodology.
 
-### SPI LCD command protocol reference
+**[zaphoxx/pico-tpmsniffer-spi](https://github.com/zaphoxx/pico-tpmsniffer-spi)**  
+Passive SPI capture on RP2040, pogo-pin PCB design, open KiCad files.
+
+### RGB parallel display reference
+
+**[Raspberry Pi DPI documentation](https://pinout.xyz/pinout/dpi)**  
+Official documentation for Pi Zero W parallel RGB interface — the hardware basis for Option 1.
+
+### LCD framebuffer reference
 
 **[juj/fbcp-ili9341](https://github.com/juj/fbcp-ili9341)**  
-Deep documentation of SPI LCD command sets (ILI9341/ST7789), partial updates, and framebuffer techniques. Best reference for understanding the command protocol.
+Deep documentation of LCD display interfaces, framebuffer techniques, and SPI/RGB protocol understanding.
 
 ---
 
-## Why Nobody Did This Before
+## Research Sources
 
-- The fishfinder community and the hardware hacking community do not overlap
-- The ESP32-S3 with hardware JPEG encoding only became available in 2021
-- TPM SPI sniffer projects live in the cybersecurity world, not in maker or fishing circles
-- High-resolution PCB photos were only available because a spare parts retailer published teardown photos to sell replacement parts
-- Confirming the FPC connector specs requires physically inspecting the board — almost nobody disassembles a working Striker 4
+All findings are based on publicly available sources. No proprietary information was used.
+
+| Finding | Source | URL |
+|---|---|---|
+| PCB photos, component identification | gfixer.ru spare parts catalog | https://gfixer.ru |
+| LCD part number TM043NDHG13 for Striker Plus 4 | gfixer.com product GP05151 | https://gfixer.com/products/gp05151 |
+| TM043NDHG12 full pinout and datasheet | datasheet4u.com | https://datasheet4u.com/pdf/1259013/TM043NDHG12.pdf |
+| TM043NDH03 interface confirmation (RGB parallel, 40-pin) | twscreen.com | https://www.twscreen.com/en/lcdpanel/15622/tianma/tm043ndh03/ |
+| Winbond SDRAM identification | eBay teardown photos + Winbond datasheet | https://www.digikey.com/en/products/detail/winbond-electronics/W9825G6KH-6I/5001920 |
+| FH12A-40S-0.5SH connector spec | TM043NDHG12 datasheet note 1 | — |
+| Striker Vivid 4cv specs (272×480, 4") | Garmin official + gpscentral.ca | https://www.gpscentral.ca/wp-content/uploads/Garmin_STRIKER_Vivid_4cv_Specifications.pdf |
 
 ---
 
 ## Status
 
 - [x] Problem defined
-- [x] PCB photographed and analyzed (gfixer.ru photos)
-- [x] LCD FPC connector fully characterized — 40-pin, 0.5mm pitch, ZIF flip-top, bottom contact
-- [x] FPC breakout identified — AliExpress FPC-40P, C$1.50 for 2 pcs
-- [x] Signal identification procedure documented
-- [x] Firmware stack identified — 4 open-source components
-- [x] Bill of materials complete (~$13 total)
+- [x] PCB photographed and analyzed — gfixer.ru and eBay teardown photos
+- [x] LCD part number confirmed — TM043NDHG13 (Striker 4 / Striker Plus 4)
+- [x] Interface confirmed — **RGB parallel 24-bit** (not SPI as originally assumed)
+- [x] Full pinout documented — from TM043NDHG12 datasheet (sibling model)
+- [x] FPC connector fully characterized — 40-pin, 0.5mm, ZIF, FH12A-40S-0.5SH
+- [x] PCB chips identified — MCU (SN/2065850B2CE), Winbond SDRAM, ST7282T2 driver
+- [x] FPC breakout identified — AliExpress FPC-40P 0.5mm, C$1.50/2pcs
+- [x] Logic analyzer identified — 24MHz 8ch clone, AliExpress ~$10
+- [x] Capture platform options documented — Pi Zero W (recommended) or ESP32-S3
 - [x] Similar projects referenced and validated
-- [ ] Physical signal mapping on a real unit (needs Striker 4 + multimeter + FPC breakout)
+- [ ] LCD part number confirmed for **Striker Vivid 4cv** specifically
+- [ ] Physical pin mapping on a real unit (needs unit + multimeter + FPC breakout)
+- [ ] Logic analyzer validation of RGB interface
 - [ ] Firmware implementation
-- [ ] MJPEG stream validation
-- [ ] End-to-end demo video
+- [ ] End-to-end demo
 
 ---
 
 ## Contributing
 
-**If you have a Garmin Striker 4 and a multimeter**, you can advance this project today:
+**If you have a Garmin Striker 4, Striker Plus 4, or Striker Vivid 4cv:**
 
-1. Open the unit (6 Phillips #0 screws)
-2. Order the FPC-40P 0.5mm breakout from AliExpress (~C$1.50)
-3. Insert the breakout between the motherboard ZIF connector and the LCD cable
-4. Power on the unit with the sonar screen active
-5. Measure DC voltage on each of the 40 breakout pins
-6. Note which pins oscillate — those are your SPI signals
-7. Open an Issue here with your findings
+The single most valuable contribution right now is opening the unit and reading the part number printed on the FPC cable of the LCD. It takes 5 minutes and confirms compatibility.
 
-**PCB part number to confirm compatibility:** `105-03781-01`
+1. Open the unit (T8 Torx screws)
+2. Locate the flat ribbon cable connecting the screen to the motherboard
+3. Read the part number printed on the cable or the LCD module
+4. Open an Issue with the part number and which model you have
+
+**Second most valuable:** Insert the FPC breakout, connect a logic analyzer, and confirm DCLK frequency and RGB signal presence.
+
+**PCB part numbers for reference:**
+- Striker 4: `105-03781-01`
+- Striker Plus 4: `105-03292-00`
+- Striker Vivid 4cv: unknown — help needed
 
 ---
 
@@ -270,4 +353,4 @@ MIT — do whatever you want with this.
 
 ---
 
-*Research conducted March 2026. PCB analysis based on publicly available photos from gfixer.ru spare parts catalog. All referenced GitHub projects belong to their respective authors.*
+*Feasibility study conducted March 2026. All PCB analysis based on publicly available teardown photos and manufacturer datasheets. All referenced GitHub projects belong to their respective authors. English documentation assisted by Claude (Anthropic) — French is the author's native language.*
