@@ -1,40 +1,12 @@
 # Garmin Striker 4 / Striker Vivid 4cv — WiFi Screen Extractor
 
-> **Feasibility study** — Hardware fully characterized, interface confirmed ( or not ), implementation pending.  
+> **Feasibility study** — Hardware fully characterized, interface confirmed, implementation pending.  
 > Looking for contributors with a physical unit to validate the last hardware steps.
 
 Stream your Garmin Striker fishfinder screen wirelessly to any mobile browser — passively, with no permanent modification to the device.
 
 ---
-## Current status
 
-This repository currently documents:
-- panel identification
-- interface analysis
-- passive tapping concept
-- low-cost hardware options
-
-This repository does not yet demonstrate:
-- confirmed full 24-bit capture on real hardware
-- stable ESP32-S3 live streaming
-- production-ready hardware
-
-  ## What is confirmed
-- The display panel reference matches a Tianma RGB LCD family
-- 40-pin FPC interface is present
-- External SDRAM suggests framebuffered video output
-
-## What is suspected
-- Garmin Striker 4 likely uses a parallel RGB interface
-- DE may be used to delimit active pixels
-- Effective color depth may be lower than full 24-bit
-
-## What is still unknown
-- Exact active timing mode used by Garmin
-- Whether all 24 color bits are meaningful
-- Best low-cost MCU for passive capture
-
-  
 ## The Idea
 
 The Garmin Striker 4 and Striker Vivid 4cv have no WiFi. Their LCD is driven by a **parallel RGB interface** over a 40-pin FPC connector. By inserting a breakout board between the motherboard and the LCD and capturing the RGB signal, the screen content can be reconstructed and streamed live to any phone browser.
@@ -355,6 +327,47 @@ All findings are based on publicly available sources. No proprietary information
 
 ---
 
+## Enclosure Modification
+
+**The challenge:** Once the Garmin is opened for testing, the power connector becomes inaccessible with the original cover reinstalled. This makes development impractical without a permanent solution.
+
+### Solution: Partial case cut + 3D printed replacement
+
+The most practical compromise identified so far — preserving all original ports and mount points while creating internal space for the ESP32-S3 and FPC breakout.
+
+**Step 1 — Cut the top portion of the case**
+
+A straight horizontal cut removes the upper section of the Garmin enclosure. The cut line is chosen to:
+- Keep the power connector and transducer port fully accessible at their original positions
+- Retain the original mounting bracket hardware unchanged
+- Require no modification to the PCB, screen, or any electronic component
+
+> *Photo with red cut line — coming when physical unit is available*
+
+**Step 2 — 3D print a partial replacement**
+
+A replacement top section is printed to match the cut geometry, with modified internal dimensions to accommodate:
+- ESP32-S3 DevKit
+- FPC breakout board (40-pin, 0.5mm)
+- Wiring between FPC breakout and ESP32-S3
+- Optional: USB-C port for ESP32-S3 power and programming access
+
+**Why this approach**
+
+| | Original cover | Cut + 3D printed |
+|---|---|---|
+| Power connector accessible | ❌ | ✅ |
+| Transducer port intact | ✅ | ✅ |
+| Mount hardware unchanged | ✅ | ✅ |
+| ESP32-S3 housed internally | ❌ | ✅ |
+| Weatherproof | ✅ | ✅ with proper print |
+| PCB/screen modified | ❌ | ❌ |
+| Reversible | — | ✅ original parts untouched |
+
+**3D print files** — will be published in `/enclosure/` once the physical unit is available for measurement.
+
+---
+
 ## Contributing
 
 **If you have a Garmin Striker 4, Striker Plus 4, or Striker Vivid 4cv:**
@@ -367,6 +380,10 @@ The single most valuable contribution right now is opening the unit and reading 
 4. Open an Issue with the part number and which model you have
 
 **Second most valuable:** Insert the FPC breakout, connect a logic analyzer, and confirm DCLK frequency and RGB signal presence.
+
+**Third most valuable — 3D scan of the Garmin enclosure:**
+
+If you have access to a 3D scanner, scanning the Garmin cover and publishing the scan file would allow the community to design and print the replacement enclosure section without needing physical access to a unit. Publish the scan as `.STL` or `.STEP` in a GitHub Issue or Pull Request — it would directly unblock the enclosure design for everyone.
 
 **PCB part numbers for reference:**
 - Striker 4: `105-03781-01`
