@@ -333,6 +333,8 @@ All findings are based on publicly available sources. No proprietary information
 
 ### Solution: Partial case cut + 3D printed replacement
 
+casecutline3dscan.png
+
 The most practical compromise identified so far — preserving all original ports and mount points while creating internal space for the ESP32-S3 and FPC breakout.
 
 **Step 1 — Cut the top portion of the case**
